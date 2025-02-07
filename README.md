@@ -1,5 +1,5 @@
 # rope-cli
-A single uv-runnable CLI for basic move/rename refactoring operations in Python missing from all LSPs.
+A single-file, uv-runnable CLI for basic move/rename refactoring operations in Python missing from all LSPs.
 
 ## Install
 
