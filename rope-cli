@@ -1,0 +1,138 @@
+#!/usr/bin/env -S uv run --script -q
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+# "click", "rope",
+# ]
+# ///
+
+import click
+from pathlib import Path
+from rope.base.project import Project
+from rope.base.libutils import path_to_resource
+from rope.refactor.move import create_move, MoveModule
+from rope.refactor.rename import Rename
+
+
+@click.group()
+def cli():
+    """CLI tool for Python refactoring operations."""
+    pass
+
+
+@cli.command()
+@click.argument("source_file", type=click.Path(exists=True))
+@click.argument("target_file", type=click.Path())
+@click.argument("symbol_name")
+@click.option(
+    "--project-root",
+    "-p",
+    type=click.Path(exists=True, file_okay=False),
+    default=".",
+    help="Root directory of the Python project",
+)
+def move_symbol(source_file, target_file, symbol_name, project_root):
+    """
+    Move a Python symbol from one module to another.
+
+    SOURCE_FILE: Path to the source Python file
+    TARGET_FILE: Path to the target Python file
+    SYMBOL_NAME: Name of the symbol to move (class, function, or variable)
+    """
+    try:
+        # Convert paths to absolute paths
+        source_file = str(Path(source_file).resolve())
+        target_file = str(Path(target_file).resolve())
+        project_root = str(Path(project_root).resolve())
+
+        # Initialize Rope project
+        project = Project(project_root)
+
+        # Get resources for source and target
+        source_resource = path_to_resource(project, source_file)
+
+        # Create target file if it doesn't exist
+        Path(target_file).parent.mkdir(parents=True, exist_ok=True)
+        if not Path(target_file).exists():
+            Path(target_file).touch()
+
+        target_resource = path_to_resource(project, target_file)
+
+        # Find the symbol offset in the source file
+        source_code = source_resource.read()
+        symbol_offset = source_code.index(symbol_name)
+
+        # Create and perform the move operation
+        mover = create_move(project, source_resource, symbol_offset)
+        changes = mover.get_changes(target_resource)
+        project.do(changes)
+
+        click.echo(
+            f"Successfully moved '{symbol_name}' from {source_file} to {target_file}"
+        )
+
+    except ValueError as e:
+        click.echo(f"Error: Symbol '{symbol_name}' not found in source file", err=True)
+        raise click.Abort()
+    except Exception as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        raise click.Abort()
+    finally:
+        project.close()
+
+
+@cli.command()
+@click.argument("source_module", type=click.Path(exists=True))
+@click.argument("target_package", type=click.Path(exists=True))
+@click.option(
+    "--project-root",
+    "-p",
+    type=click.Path(exists=True, file_okay=False),
+    default=".",
+    help="Root directory of the Python project",
+)
+def move_module(source_module, target_package, project_root):
+    """Move a Python module to a different package."""
+    try:
+        project = Project(project_root)
+        source = path_to_resource(project, source_module)
+        destination = path_to_resource(project, target_package)
+
+        mover = MoveModule(project, source)
+        changes = mover.get_changes(destination)
+        project.do(changes)
+
+        click.echo(
+            f"Successfully moved module from {source_module} to {target_package}"
+        )
+    finally:
+        project.close()
+
+
+@cli.command()
+@click.argument("module_path", type=click.Path(exists=True))
+@click.argument("new_name")
+@click.option(
+    "--project-root",
+    "-p",
+    type=click.Path(exists=True, file_okay=False),
+    default=".",
+    help="Root directory of the Python project",
+)
+def rename_module(module_path, new_name, project_root):
+    """Rename a Python module."""
+    try:
+        project = Project(project_root)
+        module = path_to_resource(project, module_path)
+
+        renamer = Rename(project, module)
+        changes = renamer.get_changes(new_name)
+        project.do(changes)
+
+        click.echo(f"Successfully renamed module to {new_name}")
+    finally:
+        project.close()
+
+
+if __name__ == "__main__":
+    cli()
